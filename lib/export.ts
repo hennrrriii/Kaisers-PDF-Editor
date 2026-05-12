@@ -196,3 +196,31 @@ export function downloadBlob(bytes: Uint8Array, fileName: string) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// Opens a native "Save as" dialog in Chromium browsers; falls back to anchor download.
+// Returns true if a file was written (or download started), false if the user cancelled.
+export async function saveAsPdf(bytes: Uint8Array, suggestedName: string): Promise<boolean> {
+  const w = window as any;
+  if (typeof w.showSaveFilePicker === "function") {
+    try {
+      const handle = await w.showSaveFilePicker({
+        suggestedName,
+        types: [
+          {
+            description: "PDF document",
+            accept: { "application/pdf": [".pdf"] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      await writable.close();
+      return true;
+    } catch (e: any) {
+      if (e?.name === "AbortError") return false;
+      // Permission errors etc. → fall through to anchor download.
+    }
+  }
+  downloadBlob(bytes, suggestedName);
+  return true;
+}

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { useEditor } from "@/lib/store";
 import { loadPdfDocument } from "@/lib/pdf";
-import { exportPdf, downloadBlob } from "@/lib/export";
+import { exportPdf, saveAsPdf } from "@/lib/export";
 import { Toolbar } from "./Toolbar";
 import { PdfPage } from "./PdfPage";
 import { uid } from "@/lib/utils";
@@ -75,13 +75,17 @@ export function Editor() {
   const handleSave = useCallback(async () => {
     if (saveLockRef.current) return;
     saveLockRef.current = true;
-    const t = toast.loading("Exporting PDF…");
+    const t = toast.loading("Preparing PDF…");
     try {
       const bytes = await exportPdf(pdfBytes, pages, fileName ?? "kaisers.pdf");
-      const out = (fileName ?? "kaisers.pdf").replace(/\.pdf$/i, "") + " — annotated.pdf";
-      downloadBlob(bytes, out);
-      markSaved();
-      toast.success("PDF saved.", { id: t });
+      const suggested = (fileName ?? "kaisers.pdf").replace(/\.pdf$/i, "") + " — annotated.pdf";
+      const ok = await saveAsPdf(bytes, suggested);
+      if (ok) {
+        markSaved();
+        toast.success("PDF saved.", { id: t });
+      } else {
+        toast.dismiss(t);
+      }
     } catch (e) {
       console.error(e);
       toast.error("Failed to export PDF.", { id: t });

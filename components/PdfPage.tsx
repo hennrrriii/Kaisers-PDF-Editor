@@ -1,10 +1,20 @@
 "use client";
 import { useEffect, useRef, useState, memo, useCallback } from "react";
-import { Stage, Layer, Line, Rect, Circle, Arrow, Text as KText, Image as KImage, Transformer } from "react-konva";
+import {
+  Stage,
+  Layer,
+  Line,
+  Rect,
+  Circle,
+  Arrow,
+  Text as KText,
+  Image as KImage,
+  Transformer,
+} from "react-konva";
 import type Konva from "konva";
 import * as pdfjs from "pdfjs-dist";
 import { useEditor } from "@/lib/store";
-import type { Annotation, Page } from "@/lib/types";
+import type { Annotation, Page, TextAnnotation } from "@/lib/types";
 import { uid } from "@/lib/utils";
 import { straightenHighlight } from "@/lib/highlight";
 
@@ -15,7 +25,26 @@ type Props = {
   logicalSize: { width: number; height: number };
 };
 
-function URLImage({ ann, onChange, isSelected, onSelect, draggable }: any) {
+type EditingState = {
+  x: number;
+  y: number;
+  text: string;
+  fontSize: number;
+  fill: string;
+  editingId?: string;
+};
+
+function URLImageNode({
+  ann,
+  draggable,
+  onPatch,
+  onSelect,
+}: {
+  ann: Extract<Annotation, { type: "image" }>;
+  draggable: boolean;
+  onPatch: (p: Partial<Annotation>) => void;
+  onSelect: () => void;
+}) {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
     const i = new window.Image();
@@ -23,44 +52,36 @@ function URLImage({ ann, onChange, isSelected, onSelect, draggable }: any) {
     i.onload = () => setImg(i);
     i.src = ann.src;
   }, [ann.src]);
-  const shapeRef = useRef<any>(null);
-  const trRef = useRef<any>(null);
-  useEffect(() => {
-    if (isSelected && trRef.current && shapeRef.current) {
-      trRef.current.nodes([shapeRef.current]);
-      trRef.current.getLayer()?.batchDraw();
-    }
-  }, [isSelected, img]);
   if (!img) return null;
   return (
-    <>
-      <KImage
-        ref={shapeRef}
-        image={img}
-        x={ann.x}
-        y={ann.y}
-        width={ann.width}
-        height={ann.height}
-        draggable={draggable}
-        onClick={onSelect}
-        onTap={onSelect}
-        onDragEnd={(e) => onChange({ x: e.target.x(), y: e.target.y() })}
-        onTransformEnd={() => {
-          const node = shapeRef.current;
-          const sx = node.scaleX();
-          const sy = node.scaleY();
-          node.scaleX(1);
-          node.scaleY(1);
-          onChange({
-            x: node.x(),
-            y: node.y(),
-            width: Math.max(10, node.width() * sx),
-            height: Math.max(10, node.height() * sy),
-          });
-        }}
-      />
-      {isSelected && <Transformer ref={trRef} rotateEnabled={false} />}
-    </>
+    <KImage
+      name={ann.id}
+      annId={ann.id as any}
+      image={img}
+      x={ann.x}
+      y={ann.y}
+      width={ann.width}
+      height={ann.height}
+      draggable={draggable}
+      onMouseDown={(e) => {
+        e.cancelBubble = true;
+        onSelect();
+      }}
+      onDragEnd={(e) => onPatch({ x: e.target.x(), y: e.target.y() })}
+      onTransformEnd={(e) => {
+        const node = e.target;
+        const sx = node.scaleX();
+        const sy = node.scaleY();
+        node.scaleX(1);
+        node.scaleY(1);
+        onPatch({
+          x: node.x(),
+          y: node.y(),
+          width: Math.max(10, node.width() * sx),
+          height: Math.max(10, node.height() * sy),
+        });
+      }}
+    />
   );
 }
 
@@ -84,22 +105,27 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const layerRef = useRef<Konva.Layer>(null);
+  const trRef = useRef<Konva.Transformer>(null);
+
   const [visible, setVisible] = useState(false);
   const renderTaskRef = useRef<any>(null);
   const renderedZoomRef = useRef<number>(0);
   const textLayerBuiltRef = useRef<boolean>(false);
 
-  // Debounced "stable" zoom that drives expensive rasterization.
+  // Debounced "stable" zoom: drives the expensive pdfjs raster.
   const [stableZoom, setStableZoom] = useState(zoom);
   useEffect(() => {
-    const t = setTimeout(() => setStableZoom(zoom), 150);
+    const t = setTimeout(() => setStableZoom(zoom), 200);
     return () => clearTimeout(t);
   }, [zoom]);
 
   const [drawing, setDrawing] = useState<Annotation | null>(null);
-  const [editing, setEditing] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [editing, setEditing] = useState<EditingState | null>(null);
+  const editingRef = useRef<EditingState | null>(null);
+  editingRef.current = editing;
 
-  // Intersection observer
+  // Intersection observer for lazy raster
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -107,13 +133,14 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
       (entries) => {
         for (const e of entries) setVisible(e.isIntersecting);
       },
-      { root: null, rootMargin: "600px 0px", threshold: 0 },
+      { root: null, rootMargin: "1200px 0px", threshold: 0 },
     );
     io.observe(el);
     return () => io.disconnect();
   }, []);
 
-  // Render PDF canvas at stableZoom only
+  // Render PDF page via an OFFSCREEN canvas, then blit. This avoids the
+  // visible canvas ever appearing blank between resize and render finish.
   useEffect(() => {
     let cancelled = false;
     async function render() {
@@ -124,21 +151,32 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
       if (cancelled) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const viewport = pdfPage.getViewport({ scale: stableZoom * dpr });
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext("2d", { alpha: false })!;
+      const visibleCanvas = canvasRef.current;
+      if (!visibleCanvas) return;
+
+      const off = document.createElement("canvas");
+      off.width = Math.ceil(viewport.width);
+      off.height = Math.ceil(viewport.height);
+      const offCtx = off.getContext("2d", { alpha: false });
+      if (!offCtx) return;
+
       if (renderTaskRef.current) {
         try {
           renderTaskRef.current.cancel();
         } catch {}
       }
-      const task = pdfPage.render({ canvasContext: ctx, viewport });
+      const task = pdfPage.render({ canvasContext: offCtx, viewport });
       renderTaskRef.current = task;
       try {
         await task.promise;
-        if (!cancelled) renderedZoomRef.current = stableZoom;
+        if (cancelled) return;
+        // Synchronous resize + blit in a single frame.
+        visibleCanvas.width = off.width;
+        visibleCanvas.height = off.height;
+        const ctx = visibleCanvas.getContext("2d", { alpha: false });
+        if (!ctx) return;
+        ctx.drawImage(off, 0, 0);
+        renderedZoomRef.current = stableZoom;
       } catch {}
     }
     render();
@@ -147,20 +185,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     };
   }, [visible, stableZoom, pdfDoc, page.ref]);
 
-  // Free GPU memory when page scrolls off
-  useEffect(() => {
-    if (!visible && page.ref.kind === "pdf") {
-      const c = canvasRef.current;
-      if (c && c.width !== 0) {
-        c.width = 0;
-        c.height = 0;
-        renderedZoomRef.current = 0;
-      }
-    }
-  }, [visible, page.ref]);
-
-  // Build text layer once per visibility cycle, at scale=1.
-  // CSS scales it via transform for cheap zoom updates.
+  // Build text layer at scale=1 once; CSS scales it via transform.
   useEffect(() => {
     let cancelled = false;
     async function build() {
@@ -181,8 +206,8 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         });
         await tl.render();
         if (!cancelled) textLayerBuiltRef.current = true;
-      } catch (e) {
-        // ignore — text layer is best-effort
+      } catch {
+        // ignore
       }
     }
     build();
@@ -191,7 +216,6 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     };
   }, [visible, pdfDoc, page.ref]);
 
-  // Reset text layer cache when page identity changes
   useEffect(() => {
     textLayerBuiltRef.current = false;
   }, [page.id]);
@@ -199,7 +223,28 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const stageWidth = logicalSize.width * zoom;
   const stageHeight = logicalSize.height * zoom;
 
-  // Text selection → highlight conversion
+  // Hook the Transformer to the current selection on this page
+  useEffect(() => {
+    const tr = trRef.current;
+    const layer = layerRef.current;
+    if (!tr || !layer) return;
+    const eligible =
+      tool === "cursor" && selectedPageId === page.id && selectedId && !editing;
+    if (!eligible) {
+      tr.nodes([]);
+      tr.getLayer()?.batchDraw();
+      return;
+    }
+    const node = layer.findOne(`.${selectedId}`);
+    if (node) {
+      tr.nodes([node]);
+      tr.getLayer()?.batchDraw();
+    } else {
+      tr.nodes([]);
+    }
+  }, [tool, selectedId, selectedPageId, page.id, page.annotations, editing]);
+
+  // Text-selection → highlight rectangles when releasing the mouse with H tool
   const onContainerMouseUp = useCallback(() => {
     if (tool !== "highlight") return;
     const sel = window.getSelection();
@@ -211,24 +256,23 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     if (!tl.contains(range.startContainer) && !tl.contains(range.endContainer)) return;
     const pageRect = container.getBoundingClientRect();
     const rects = Array.from(range.getClientRects());
-    const created: string[] = [];
+    let added = 0;
     for (const r of rects) {
       if (r.width < 2 || r.height < 2) continue;
       const x = (r.left - pageRect.left) / zoom;
       const y = (r.top - pageRect.top) / zoom;
       const w = r.width / zoom;
       const h = r.height / zoom;
-      const id = uid();
       addAnnotation(page.id, {
-        id,
+        id: uid(),
         type: "highlight",
         points: [x, y + h / 2, x + w, y + h / 2],
         stroke: highlightColor,
         strokeWidth: h,
       });
-      created.push(id);
+      added++;
     }
-    if (created.length) sel.removeAllRanges();
+    if (added) sel.removeAllRanges();
   }, [tool, zoom, highlightColor, addAnnotation, page.id]);
 
   const getLogicalPos = (stage: Konva.Stage) => {
@@ -236,6 +280,46 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     if (!p) return null;
     return { x: p.x / zoom, y: p.y / zoom };
   };
+
+  const commitEdit = useCallback(
+    (override?: EditingState) => {
+      const e = override ?? editingRef.current;
+      if (!e) return;
+      const text = e.text;
+      if (text.trim() !== "") {
+        addAnnotation(page.id, {
+          id: uid(),
+          type: "text",
+          x: e.x,
+          y: e.y,
+          text,
+          fill: e.fill,
+          fontSize: e.fontSize,
+          width: 240,
+        });
+      }
+      setEditing(null);
+    },
+    [addAnnotation, page.id],
+  );
+
+  const beginTextEditExisting = useCallback(
+    (ann: TextAnnotation) => {
+      // commit any in-progress edit first
+      if (editingRef.current) commitEdit();
+      setEditing({
+        x: ann.x,
+        y: ann.y,
+        text: ann.text,
+        fontSize: ann.fontSize,
+        fill: ann.fill,
+        editingId: ann.id,
+      });
+      // hide the live KText while editing
+      deleteAnnotation(page.id, ann.id);
+    },
+    [commitEdit, deleteAnnotation, page.id],
+  );
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const stage = e.target.getStage();
@@ -250,16 +334,33 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     }
     if (tool === "eraser") {
       if (!isStage) {
-        const id = (e.target as any).attrs.annId;
+        const id = (e.target as any).attrs.annId || (e.target as any).attrs.name;
         if (id) deleteAnnotation(page.id, id);
       }
       return;
     }
     if (tool === "text") {
-      if (!isStage) return;
-      setEditing({ x: pos.x, y: pos.y, text: "" });
+      // Clicking on an existing text annotation → edit it
+      if (!isStage) {
+        const id = (e.target as any).attrs.annId || (e.target as any).attrs.name;
+        const existing = id
+          ? (page.annotations.find((a) => a.id === id) as Annotation | undefined)
+          : undefined;
+        if (existing && existing.type === "text") {
+          beginTextEditExisting(existing);
+          return;
+        }
+        return;
+      }
+      // Empty area: commit any prior edit, then start a new one
+      if (editingRef.current) commitEdit();
+      setEditing({ x: pos.x, y: pos.y, text: "", fontSize, fill: textColor });
       return;
     }
+
+    // commit any in-progress text edit when starting another tool action
+    if (editingRef.current) commitEdit();
+
     const id = uid();
     if (tool === "draw") {
       setDrawing({
@@ -382,31 +483,67 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     setDrawing(null);
   };
 
-  // Text editing focus
+  // Auto-focus textarea on open
   useEffect(() => {
     if (editing && textareaRef.current) {
       const ta = textareaRef.current;
-      requestAnimationFrame(() => ta.focus());
-    }
-  }, [editing]);
-
-  const commitEdit = useCallback(() => {
-    if (!editing) return;
-    const text = editing.text;
-    if (text.trim() !== "") {
-      addAnnotation(page.id, {
-        id: uid(),
-        type: "text",
-        x: editing.x,
-        y: editing.y,
-        text,
-        fill: textColor,
-        fontSize,
-        width: 240,
+      requestAnimationFrame(() => {
+        ta.focus();
+        ta.select();
       });
     }
-    setEditing(null);
-  }, [editing, page.id, addAnnotation, textColor, fontSize]);
+  }, [editing?.editingId, editing === null ? "none" : `${editing.x}-${editing.y}`]);
+
+  // ---------- transform-end handlers (V tool resize) ----------
+  const bakeTransformAndUpdate = useCallback(
+    (annId: string, ann: Annotation, node: Konva.Node) => {
+      const sx = node.scaleX();
+      const sy = node.scaleY();
+      const x = node.x();
+      const y = node.y();
+      node.scaleX(1);
+      node.scaleY(1);
+      switch (ann.type) {
+        case "rect":
+          updateAnnotation(page.id, annId, {
+            x,
+            y,
+            width: Math.max(4, (node as Konva.Rect).width() * sx),
+            height: Math.max(4, (node as Konva.Rect).height() * sy),
+          } as any);
+          break;
+        case "circle":
+          updateAnnotation(page.id, annId, {
+            x,
+            y,
+            radius: Math.max(4, (node as Konva.Circle).radius() * Math.max(sx, sy)),
+          } as any);
+          break;
+        case "text":
+          updateAnnotation(page.id, annId, {
+            x,
+            y,
+            fontSize: Math.max(6, (node as Konva.Text).fontSize() * sy),
+          } as any);
+          break;
+        case "line":
+        case "arrow":
+        case "draw":
+        case "highlight": {
+          const pts = (node as Konva.Line).points();
+          const next: number[] = [];
+          for (let i = 0; i < pts.length; i += 2) {
+            next.push(x + pts[i] * sx, y + pts[i + 1] * sy);
+          }
+          node.x(0);
+          node.y(0);
+          updateAnnotation(page.id, annId, { points: next } as any);
+          break;
+        }
+      }
+    },
+    [page.id, updateAnnotation],
+  );
 
   const renderAnnotation = (ann: Annotation) => {
     const isSelected = selectedId === ann.id && selectedPageId === page.id;
@@ -427,14 +564,19 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         updateAnnotation(page.id, ann.id, { points: pts } as any);
       }
     };
-    const selectProps = {
-      annId: ann.id,
+    const onTransformEnd = (e: any) => bakeTransformAndUpdate(ann.id, ann, e.target);
+    const common = {
+      name: ann.id,
+      annId: ann.id as any,
       onMouseDown: (e: any) => {
         if (tool === "cursor") {
           e.cancelBubble = true;
           setSelected(page.id, ann.id);
         }
       },
+      draggable,
+      onDragEnd: handleDragEnd,
+      onTransformEnd,
     };
     const hitWide = (sw: number) => Math.max(20, sw + 8);
     switch (ann.type) {
@@ -442,7 +584,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         return (
           <Line
             key={ann.id}
-            {...(selectProps as any)}
+            {...(common as any)}
             points={ann.points}
             stroke={ann.stroke}
             strokeWidth={ann.strokeWidth}
@@ -450,8 +592,6 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             tension={0.4}
             lineCap="round"
             lineJoin="round"
-            draggable={draggable}
-            onDragEnd={handleDragEnd}
             shadowEnabled={isSelected}
             shadowColor="#1d4ed8"
             shadowBlur={4}
@@ -461,7 +601,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         return (
           <Line
             key={ann.id}
-            {...(selectProps as any)}
+            {...(common as any)}
             points={ann.points}
             stroke={ann.stroke}
             strokeWidth={ann.strokeWidth}
@@ -469,15 +609,13 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             lineCap="butt"
             lineJoin="round"
             opacity={0.4}
-            draggable={draggable}
-            onDragEnd={handleDragEnd}
           />
         );
       case "rect":
         return (
           <Rect
             key={ann.id}
-            {...(selectProps as any)}
+            {...(common as any)}
             x={ann.x}
             y={ann.y}
             width={ann.width}
@@ -485,8 +623,6 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             stroke={ann.stroke}
             strokeWidth={ann.strokeWidth}
             fill={ann.fill}
-            draggable={draggable}
-            onDragEnd={handleDragEnd}
             shadowEnabled={isSelected}
             shadowColor="#1d4ed8"
             shadowBlur={4}
@@ -496,15 +632,13 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         return (
           <Circle
             key={ann.id}
-            {...(selectProps as any)}
+            {...(common as any)}
             x={ann.x}
             y={ann.y}
             radius={ann.radius}
             stroke={ann.stroke}
             strokeWidth={ann.strokeWidth}
             fill={ann.fill}
-            draggable={draggable}
-            onDragEnd={handleDragEnd}
             shadowEnabled={isSelected}
             shadowColor="#1d4ed8"
             shadowBlur={4}
@@ -514,21 +648,19 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         return (
           <Line
             key={ann.id}
-            {...(selectProps as any)}
+            {...(common as any)}
             points={ann.points}
             stroke={ann.stroke}
             strokeWidth={ann.strokeWidth}
             hitStrokeWidth={hitWide(ann.strokeWidth)}
             lineCap="round"
-            draggable={draggable}
-            onDragEnd={handleDragEnd}
           />
         );
       case "arrow":
         return (
           <Arrow
             key={ann.id}
-            {...(selectProps as any)}
+            {...(common as any)}
             points={ann.points}
             stroke={ann.stroke}
             strokeWidth={ann.strokeWidth}
@@ -536,28 +668,18 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             fill={ann.stroke}
             pointerLength={10 + ann.strokeWidth * 2}
             pointerWidth={8 + ann.strokeWidth * 2}
-            draggable={draggable}
-            onDragEnd={handleDragEnd}
           />
         );
       case "text":
         return (
           <KText
             key={ann.id}
-            {...(selectProps as any)}
+            {...(common as any)}
             x={ann.x}
             y={ann.y}
             text={ann.text}
             fill={ann.fill}
             fontSize={ann.fontSize}
-            draggable={draggable}
-            onDragEnd={handleDragEnd}
-            onDblClick={() => {
-              if (tool === "cursor") {
-                setEditing({ x: ann.x, y: ann.y, text: ann.text });
-                deleteAnnotation(page.id, ann.id);
-              }
-            }}
             shadowEnabled={isSelected}
             shadowColor="#1d4ed8"
             shadowBlur={4}
@@ -565,23 +687,18 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         );
       case "image":
         return (
-          <URLImage
+          <URLImageNode
             key={ann.id}
             ann={ann}
-            isSelected={isSelected}
             draggable={draggable}
+            onPatch={(p) => updateAnnotation(page.id, ann.id, p)}
             onSelect={() => tool === "cursor" && setSelected(page.id, ann.id)}
-            onChange={(patch: any) => updateAnnotation(page.id, ann.id, patch)}
           />
         );
     }
     return null;
   };
 
-  // Pointer event policy for the text layer
-  // - highlight tool: text spans selectable (so user gets browser selection)
-  // - cursor tool: text spans selectable too
-  // - drawing/eraser tools: text layer transparent to events
   const textLayerInteractive = tool === "cursor" || tool === "highlight";
 
   return (
@@ -619,19 +736,24 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
                 : tool === "eraser"
                   ? "crosshair"
                   : "crosshair",
-          // For cursor/highlight the text layer needs to receive events from text spans.
-          // Stage stays on top to handle annotation movement on whitespace.
-          pointerEvents: tool === "cursor" ? "auto" : "auto",
         }}
       >
-        <Layer scaleX={zoom} scaleY={zoom} listening>
+        <Layer ref={layerRef} scaleX={zoom} scaleY={zoom} listening>
           {page.annotations.map(renderAnnotation)}
           {drawing && renderAnnotation(drawing)}
+          <Transformer
+            ref={trRef}
+            rotateEnabled={false}
+            flipEnabled={false}
+            borderStroke="#1d4ed8"
+            anchorFill="#ffffff"
+            anchorStroke="#1d4ed8"
+            anchorSize={8}
+            ignoreStroke
+          />
         </Layer>
       </Stage>
 
-      {/* PDF.js text layer on top of Stage so text spans can capture clicks.
-          Container is pointer-events: none so whitespace falls through to Stage. */}
       <div
         ref={textLayerRef}
         className={`text-layer absolute left-0 top-0 ${
@@ -654,7 +776,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
           ref={textareaRef}
           value={editing.text}
           onChange={(e) => setEditing({ ...editing, text: e.target.value })}
-          onBlur={commitEdit}
+          onBlur={() => commitEdit()}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
@@ -665,10 +787,10 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
           style={{
             left: editing.x * zoom,
             top: editing.y * zoom,
-            color: textColor,
-            fontSize: `${fontSize * zoom}px`,
-            minWidth: 100,
-            minHeight: fontSize * zoom + 8,
+            color: editing.fill,
+            fontSize: `${editing.fontSize * zoom}px`,
+            minWidth: 120,
+            minHeight: editing.fontSize * zoom + 8,
           }}
         />
       )}
