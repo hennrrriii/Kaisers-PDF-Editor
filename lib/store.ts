@@ -31,6 +31,8 @@ export const HIGHLIGHT_COLORS = [
 
 export type StrokeTool = "draw" | "rect" | "circle" | "line" | "arrow";
 
+const HISTORY_LIMIT = 100;
+
 type EditorState = {
   fileName: string | null;
   pdfBytes: ArrayBuffer | null;
@@ -44,11 +46,13 @@ type EditorState = {
   highlightWidth: number;
   fontSize: number;
   filled: boolean;
-  selectedId: string | null;
+  selectedIds: string[];
   selectedPageId: string | null;
   currentPageIndex: number;
   dirty: boolean;
   lastSavedAt: number;
+  past: Page[][];
+  future: Page[][];
 };
 
 type EditorActions = {
@@ -65,13 +69,21 @@ type EditorActions = {
   addAnnotation: (pageId: string, ann: Annotation) => void;
   updateAnnotation: (pageId: string, id: string, patch: Partial<Annotation>) => void;
   deleteAnnotation: (pageId: string, id: string) => void;
+  deleteAnnotations: (pageId: string, ids: string[]) => void;
   setSelected: (pageId: string | null, id: string | null) => void;
+  setSelectedIds: (pageId: string | null, ids: string[]) => void;
+  toggleSelected: (pageId: string, id: string) => void;
   setCurrentPageIndex: (i: number) => void;
   insertBlankPageAfter: (pageId: string) => void;
   deletePage: (pageId: string) => void;
   markSaved: () => void;
+  undo: () => void;
+  redo: () => void;
   reset: () => void;
 };
+
+const pushPast = (past: Page[][], pages: Page[]) =>
+  [...past, pages].slice(-HISTORY_LIMIT);
 
 export const useEditor = create<EditorState & EditorActions>((set, get) => ({
   fileName: null,
@@ -92,16 +104,29 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
   highlightWidth: 16,
   fontSize: 16,
   filled: false,
-  selectedId: null,
+  selectedIds: [],
   selectedPageId: null,
   currentPageIndex: 0,
   dirty: false,
   lastSavedAt: Date.now(),
+  past: [],
+  future: [],
 
   loadPdf: (fileName, bytes, pages) =>
-    set({ fileName, pdfBytes: bytes, pages, currentPageIndex: 0, dirty: false, lastSavedAt: Date.now() }),
+    set({
+      fileName,
+      pdfBytes: bytes,
+      pages,
+      currentPageIndex: 0,
+      dirty: false,
+      lastSavedAt: Date.now(),
+      past: [],
+      future: [],
+      selectedIds: [],
+      selectedPageId: null,
+    }),
 
-  setTool: (t) => set({ tool: t, selectedId: null }),
+  setTool: (t) => set({ tool: t, selectedIds: [] }),
   setZoom: (z) => set({ zoom: Math.max(0.4, Math.min(4, z)) }),
   setStrokeColor: (tool, c) =>
     set((s) => ({ strokeColors: { ...s.strokeColors, [tool]: c } })),
@@ -114,17 +139,25 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
 
   addAnnotation: (pageId, ann) =>
     set((s) => ({
-      pages: s.pages.map((p) => (p.id === pageId ? { ...p, annotations: [...p.annotations, ann] } : p)),
+      past: pushPast(s.past, s.pages),
+      future: [],
+      pages: s.pages.map((p) =>
+        p.id === pageId ? { ...p, annotations: [...p.annotations, ann] } : p,
+      ),
       dirty: true,
     })),
 
   updateAnnotation: (pageId, id, patch) =>
     set((s) => ({
+      past: pushPast(s.past, s.pages),
+      future: [],
       pages: s.pages.map((p) =>
         p.id === pageId
           ? {
               ...p,
-              annotations: p.annotations.map((a) => (a.id === id ? ({ ...a, ...patch } as any) : a)),
+              annotations: p.annotations.map((a) =>
+                a.id === id ? ({ ...a, ...patch } as any) : a,
+              ),
             }
           : p,
       ),
@@ -133,14 +166,45 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
 
   deleteAnnotation: (pageId, id) =>
     set((s) => ({
+      past: pushPast(s.past, s.pages),
+      future: [],
       pages: s.pages.map((p) =>
         p.id === pageId ? { ...p, annotations: p.annotations.filter((a) => a.id !== id) } : p,
       ),
-      selectedId: s.selectedId === id ? null : s.selectedId,
+      selectedIds: s.selectedIds.filter((x) => x !== id),
       dirty: true,
     })),
 
-  setSelected: (pageId, id) => set({ selectedPageId: pageId, selectedId: id }),
+  deleteAnnotations: (pageId, ids) =>
+    set((s) => {
+      if (ids.length === 0) return s;
+      const idSet = new Set(ids);
+      return {
+        past: pushPast(s.past, s.pages),
+        future: [],
+        pages: s.pages.map((p) =>
+          p.id === pageId
+            ? { ...p, annotations: p.annotations.filter((a) => !idSet.has(a.id)) }
+            : p,
+        ),
+        selectedIds: s.selectedIds.filter((x) => !idSet.has(x)),
+        dirty: true,
+      };
+    }),
+
+  setSelected: (pageId, id) =>
+    set({ selectedPageId: pageId, selectedIds: id ? [id] : [] }),
+  setSelectedIds: (pageId, ids) =>
+    set({ selectedPageId: pageId, selectedIds: ids }),
+  toggleSelected: (pageId, id) =>
+    set((s) => {
+      if (s.selectedPageId && s.selectedPageId !== pageId) {
+        return { selectedPageId: pageId, selectedIds: [id] };
+      }
+      const has = s.selectedIds.includes(id);
+      const next = has ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id];
+      return { selectedPageId: pageId, selectedIds: next };
+    }),
   setCurrentPageIndex: (i) => set({ currentPageIndex: i }),
 
   insertBlankPageAfter: (pageId) =>
@@ -148,7 +212,6 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
       const idx = s.pages.findIndex((p) => p.id === pageId);
       if (idx < 0) return s;
       const prev = s.pages[idx];
-      // Use prev page dimensions if available, else default A4-ish at 72dpi*zoom logical
       let w = 612,
         h = 792;
       if (prev.ref.kind === "blank") {
@@ -161,22 +224,61 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
         annotations: [],
       };
       const pages = [...s.pages.slice(0, idx + 1), newPage, ...s.pages.slice(idx + 1)];
-      return { pages, dirty: true };
+      return {
+        past: pushPast(s.past, s.pages),
+        future: [],
+        pages,
+        dirty: true,
+      };
     }),
 
   deletePage: (pageId) =>
-    set((s) => ({ pages: s.pages.filter((p) => p.id !== pageId), dirty: true })),
+    set((s) => ({
+      past: pushPast(s.past, s.pages),
+      future: [],
+      pages: s.pages.filter((p) => p.id !== pageId),
+      dirty: true,
+    })),
 
   markSaved: () => set({ dirty: false, lastSavedAt: Date.now() }),
+
+  undo: () =>
+    set((s) => {
+      if (s.past.length === 0) return s;
+      const prev = s.past[s.past.length - 1];
+      return {
+        past: s.past.slice(0, -1),
+        future: [s.pages, ...s.future].slice(0, HISTORY_LIMIT),
+        pages: prev,
+        selectedIds: [],
+        dirty: true,
+      };
+    }),
+
+  redo: () =>
+    set((s) => {
+      if (s.future.length === 0) return s;
+      const next = s.future[0];
+      return {
+        past: pushPast(s.past, s.pages),
+        future: s.future.slice(1),
+        pages: next,
+        selectedIds: [],
+        dirty: true,
+      };
+    }),
+
   reset: () =>
     set({
       fileName: null,
       pdfBytes: null,
       pages: [],
       tool: "cursor",
-      selectedId: null,
+      selectedIds: [],
       selectedPageId: null,
       currentPageIndex: 0,
       dirty: false,
+      past: [],
+      future: [],
     }),
 }));

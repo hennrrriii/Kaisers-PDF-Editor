@@ -21,9 +21,11 @@ export function Editor() {
   const setZoom = useEditor((s) => s.setZoom);
   const setTool = useEditor((s) => s.setTool);
   const insertBlankPageAfter = useEditor((s) => s.insertBlankPageAfter);
-  const deleteAnnotation = useEditor((s) => s.deleteAnnotation);
-  const selectedId = useEditor((s) => s.selectedId);
+  const deleteAnnotations = useEditor((s) => s.deleteAnnotations);
+  const selectedIds = useEditor((s) => s.selectedIds);
   const selectedPageId = useEditor((s) => s.selectedPageId);
+  const undo = useEditor((s) => s.undo);
+  const redo = useEditor((s) => s.redo);
   const setCurrentPageIndex = useEditor((s) => s.setCurrentPageIndex);
   const currentPageIndex = useEditor((s) => s.currentPageIndex);
   const dirty = useEditor((s) => s.dirty);
@@ -127,9 +129,31 @@ export function Editor() {
     "delete, backspace",
     () => {
       if (isTyping()) return;
-      if (selectedId && selectedPageId) deleteAnnotation(selectedPageId, selectedId);
+      if (selectedPageId && selectedIds.length > 0) {
+        deleteAnnotations(selectedPageId, selectedIds);
+      }
     },
-    [selectedId, selectedPageId],
+    [selectedIds, selectedPageId],
+  );
+
+  // Undo / Redo
+  useHotkeys(
+    "ctrl+z, meta+z",
+    (e) => {
+      if (isTyping()) return;
+      e.preventDefault();
+      undo();
+    },
+    { enableOnFormTags: false },
+  );
+  useHotkeys(
+    "ctrl+y, meta+y, ctrl+shift+z, meta+shift+z",
+    (e) => {
+      if (isTyping()) return;
+      e.preventDefault();
+      redo();
+    },
+    { enableOnFormTags: false },
   );
 
   // Ctrl + wheel zoom — accumulated in a ref, flushed once per animation frame.

@@ -13,6 +13,8 @@ import {
   ZoomIn,
   ZoomOut,
   Home,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -57,6 +59,10 @@ export function Toolbar({ onSave }: Props) {
   const filled = useEditor((s) => s.filled);
   const setFilled = useEditor((s) => s.setFilled);
   const fileName = useEditor((s) => s.fileName);
+  const undo = useEditor((s) => s.undo);
+  const redo = useEditor((s) => s.redo);
+  const canUndo = useEditor((s) => s.past.length > 0);
+  const canRedo = useEditor((s) => s.future.length > 0);
 
   const showStroke = ["draw", "rect", "circle", "line", "arrow"].includes(tool);
   const showFillToggle = ["rect", "circle"].includes(tool);
@@ -80,6 +86,29 @@ export function Toolbar({ onSave }: Props) {
         <Home className="h-4 w-4 text-muted-foreground" />
         <span>Kaiser&apos;s</span>
       </Link>
+      <div className="h-6 w-px bg-border" />
+
+      <div className="flex items-center gap-1">
+        <Button
+          variant="toolbar"
+          size="iconSm"
+          onClick={undo}
+          disabled={!canUndo}
+          title="Undo (Ctrl+Z)"
+        >
+          <Undo2 className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="toolbar"
+          size="iconSm"
+          onClick={redo}
+          disabled={!canRedo}
+          title="Redo (Ctrl+Y)"
+        >
+          <Redo2 className="h-4 w-4" />
+        </Button>
+      </div>
+
       <div className="h-6 w-px bg-border" />
 
       <div className="flex items-center gap-1">

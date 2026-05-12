@@ -25,6 +25,72 @@ type Props = {
   logicalSize: { width: number; height: number };
 };
 
+function getAnnotationBBox(
+  ann: Annotation,
+): { x: number; y: number; w: number; h: number } {
+  switch (ann.type) {
+    case "rect":
+    case "image":
+      return {
+        x: Math.min(ann.x, ann.x + ann.width),
+        y: Math.min(ann.y, ann.y + ann.height),
+        w: Math.abs(ann.width),
+        h: Math.abs(ann.height),
+      };
+    case "circle":
+      return {
+        x: ann.x - ann.radius,
+        y: ann.y - ann.radius,
+        w: ann.radius * 2,
+        h: ann.radius * 2,
+      };
+    case "text": {
+      const lines = (ann.text || "").split("\n");
+      const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
+      const w = Math.min(ann.width ?? 240, Math.max(40, longest * ann.fontSize * 0.6));
+      const h = ann.fontSize * lines.length * 1.2;
+      return { x: ann.x, y: ann.y, w, h };
+    }
+    case "draw":
+    case "highlight":
+    case "line":
+    case "arrow": {
+      const p = ann.points;
+      let minX = Infinity,
+        minY = Infinity,
+        maxX = -Infinity,
+        maxY = -Infinity;
+      for (let i = 0; i < p.length; i += 2) {
+        const x = p[i];
+        const y = p[i + 1];
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+      const pad = (ann as any).strokeWidth ? (ann as any).strokeWidth / 2 : 0;
+      return {
+        x: minX - pad,
+        y: minY - pad,
+        w: maxX - minX + pad * 2,
+        h: maxY - minY + pad * 2,
+      };
+    }
+  }
+}
+
+function rectsIntersect(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+) {
+  return !(
+    a.x + a.w < b.x ||
+    b.x + b.w < a.x ||
+    a.y + a.h < b.y ||
+    b.y + b.h < a.y
+  );
+}
+
 type EditingState = {
   x: number;
   y: number;
@@ -43,7 +109,7 @@ function URLImageNode({
   ann: Extract<Annotation, { type: "image" }>;
   draggable: boolean;
   onPatch: (p: Partial<Annotation>) => void;
-  onSelect: () => void;
+  onSelect: (e: any) => void;
 }) {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
@@ -65,7 +131,7 @@ function URLImageNode({
       draggable={draggable}
       onMouseDown={(e) => {
         e.cancelBubble = true;
-        onSelect();
+        onSelect(e);
       }}
       onDragEnd={(e) => onPatch({ x: e.target.x(), y: e.target.y() })}
       onTransformEnd={(e) => {
@@ -95,9 +161,11 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const highlightWidth = useEditor((s) => s.highlightWidth);
   const fontSize = useEditor((s) => s.fontSize);
   const filled = useEditor((s) => s.filled);
-  const selectedId = useEditor((s) => s.selectedId);
+  const selectedIds = useEditor((s) => s.selectedIds);
   const selectedPageId = useEditor((s) => s.selectedPageId);
   const setSelected = useEditor((s) => s.setSelected);
+  const setSelectedIds = useEditor((s) => s.setSelectedIds);
+  const toggleSelected = useEditor((s) => s.toggleSelected);
   const addAnnotation = useEditor((s) => s.addAnnotation);
   const updateAnnotation = useEditor((s) => s.updateAnnotation);
   const deleteAnnotation = useEditor((s) => s.deleteAnnotation);
@@ -122,6 +190,14 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   }, [zoom]);
 
   const [drawing, setDrawing] = useState<Annotation | null>(null);
+  const [marquee, setMarquee] = useState<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    additive: boolean;
+    baseIds: string[];
+  } | null>(null);
   const [editing, setEditing] = useState<EditingState | null>(null);
   const editingRef = useRef<EditingState | null>(null);
   editingRef.current = editing;
@@ -230,20 +306,23 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     const layer = layerRef.current;
     if (!tr || !layer) return;
     const eligible =
-      tool === "cursor" && selectedPageId === page.id && selectedId && !editing;
+      tool === "cursor" &&
+      selectedPageId === page.id &&
+      selectedIds.length > 0 &&
+      !editing;
     if (!eligible) {
       tr.nodes([]);
       tr.getLayer()?.batchDraw();
       return;
     }
-    const node = layer.findOne(`.${selectedId}`);
-    if (node) {
-      tr.nodes([node]);
-      tr.getLayer()?.batchDraw();
-    } else {
-      tr.nodes([]);
+    const nodes: Konva.Node[] = [];
+    for (const id of selectedIds) {
+      const node = layer.findOne(`.${id}`);
+      if (node) nodes.push(node);
     }
-  }, [tool, selectedId, selectedPageId, page.id, page.annotations, editing]);
+    tr.nodes(nodes);
+    tr.getLayer()?.batchDraw();
+  }, [tool, selectedIds, selectedPageId, page.id, page.annotations, editing]);
 
   // Text-selection → highlight rectangles when releasing the mouse with H tool
   const onContainerMouseUp = useCallback(() => {
@@ -330,7 +409,20 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     const isStage = e.target === stage;
 
     if (tool === "cursor") {
-      if (isStage) setSelected(null, null);
+      if (isStage) {
+        // Start marquee selection
+        const additive = !!(e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey);
+        setMarquee({
+          x1: pos.x,
+          y1: pos.y,
+          x2: pos.x,
+          y2: pos.y,
+          additive,
+          baseIds:
+            additive && selectedPageId === page.id ? [...selectedIds] : [],
+        });
+        if (!additive) setSelected(null, null);
+      }
       return;
     }
     if (tool === "eraser") {
@@ -422,6 +514,14 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (marquee) {
+      const stage = e.target.getStage();
+      if (!stage) return;
+      const pos = getLogicalPos(stage);
+      if (!pos) return;
+      setMarquee((m) => (m ? { ...m, x2: pos.x, y2: pos.y } : m));
+      return;
+    }
     if (!drawing) return;
     const stage = e.target.getStage();
     if (!stage) return;
@@ -469,6 +569,27 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   };
 
   const handleMouseUp = () => {
+    if (marquee) {
+      const m = marquee;
+      const rect = {
+        x: Math.min(m.x1, m.x2),
+        y: Math.min(m.y1, m.y2),
+        w: Math.abs(m.x2 - m.x1),
+        h: Math.abs(m.y2 - m.y1),
+      };
+      setMarquee(null);
+      // Tiny click → don't change selection beyond what mousedown did
+      if (rect.w < 3 && rect.h < 3) return;
+      const hit: string[] = [];
+      for (const a of page.annotations) {
+        const bb = getAnnotationBBox(a);
+        if (rectsIntersect(rect, bb)) hit.push(a.id);
+      }
+      const base = m.additive ? m.baseIds : [];
+      const merged = Array.from(new Set([...base, ...hit]));
+      setSelectedIds(merged.length > 0 ? page.id : null, merged);
+      return;
+    }
     if (!drawing) return;
     let ann: Annotation = drawing;
     if (ann.type === "rect") {
@@ -565,7 +686,8 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   );
 
   const renderAnnotation = (ann: Annotation) => {
-    const isSelected = selectedId === ann.id && selectedPageId === page.id;
+    const isSelected =
+      selectedPageId === page.id && selectedIds.includes(ann.id);
     const draggable = tool === "cursor";
     const handleDragEnd = (e: any) => {
       if (
@@ -590,7 +712,12 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
       onMouseDown: (e: any) => {
         if (tool === "cursor") {
           e.cancelBubble = true;
-          setSelected(page.id, ann.id);
+          const evt = e.evt as MouseEvent;
+          if (evt && (evt.shiftKey || evt.ctrlKey || evt.metaKey)) {
+            toggleSelected(page.id, ann.id);
+          } else if (!(selectedPageId === page.id && selectedIds.includes(ann.id))) {
+            setSelected(page.id, ann.id);
+          }
         }
       },
       draggable,
@@ -711,7 +838,15 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             ann={ann}
             draggable={draggable}
             onPatch={(p) => updateAnnotation(page.id, ann.id, p)}
-            onSelect={() => tool === "cursor" && setSelected(page.id, ann.id)}
+            onSelect={(e) => {
+              if (tool !== "cursor") return;
+              const evt = e?.evt as MouseEvent | undefined;
+              if (evt && (evt.shiftKey || evt.ctrlKey || evt.metaKey)) {
+                toggleSelected(page.id, ann.id);
+              } else if (!(selectedPageId === page.id && selectedIds.includes(ann.id))) {
+                setSelected(page.id, ann.id);
+              }
+            }}
           />
         );
     }
@@ -760,6 +895,19 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         <Layer ref={layerRef} scaleX={zoom} scaleY={zoom} listening>
           {page.annotations.map(renderAnnotation)}
           {drawing && renderAnnotation(drawing)}
+          {marquee && (
+            <Rect
+              listening={false}
+              x={Math.min(marquee.x1, marquee.x2)}
+              y={Math.min(marquee.y1, marquee.y2)}
+              width={Math.abs(marquee.x2 - marquee.x1)}
+              height={Math.abs(marquee.y2 - marquee.y1)}
+              fill="#1d4ed822"
+              stroke="#1d4ed8"
+              strokeWidth={1 / zoom}
+              dash={[6 / zoom, 4 / zoom]}
+            />
+          )}
           <Transformer
             ref={trRef}
             rotateEnabled={false}
