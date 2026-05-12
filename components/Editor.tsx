@@ -78,7 +78,8 @@ export function Editor() {
     const t = toast.loading("Preparing PDF…");
     try {
       const bytes = await exportPdf(pdfBytes, pages, fileName ?? "kaisers.pdf");
-      const suggested = (fileName ?? "kaisers.pdf").replace(/\.pdf$/i, "") + " — annotated.pdf";
+      const baseName = (fileName ?? "kaisers.pdf").replace(/\.pdf$/i, "");
+      const suggested = `${baseName}_Kaisers_PDF_Editor.pdf`;
       const ok = await saveAsPdf(bytes, suggested);
       if (ok) {
         markSaved();

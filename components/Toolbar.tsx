@@ -50,6 +50,8 @@ export function Toolbar({ onSave }: Props) {
   const setHighlightColor = useEditor((s) => s.setHighlightColor);
   const strokeWidth = useEditor((s) => s.strokeWidth);
   const setStrokeWidth = useEditor((s) => s.setStrokeWidth);
+  const highlightWidth = useEditor((s) => s.highlightWidth);
+  const setHighlightWidth = useEditor((s) => s.setHighlightWidth);
   const fontSize = useEditor((s) => s.fontSize);
   const setFontSize = useEditor((s) => s.setFontSize);
   const filled = useEditor((s) => s.filled);
@@ -127,6 +129,24 @@ export function Toolbar({ onSave }: Props) {
               className="w-24"
             />
             <span className="w-5 text-foreground">{strokeWidth}</span>
+          </label>
+        </>
+      )}
+
+      {tool === "highlight" && (
+        <>
+          <div className="h-6 w-px bg-border" />
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            Thickness
+            <input
+              type="range"
+              min={6}
+              max={48}
+              value={highlightWidth}
+              onChange={(e) => setHighlightWidth(Number(e.target.value))}
+              className="w-24"
+            />
+            <span className="w-6 text-foreground">{highlightWidth}</span>
           </label>
         </>
       )}

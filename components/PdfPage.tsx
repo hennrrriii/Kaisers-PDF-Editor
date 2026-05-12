@@ -92,6 +92,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const textColor = useEditor((s) => s.textColor);
   const highlightColor = useEditor((s) => s.highlightColor);
   const strokeWidth = useEditor((s) => s.strokeWidth);
+  const highlightWidth = useEditor((s) => s.highlightWidth);
   const fontSize = useEditor((s) => s.fontSize);
   const filled = useEditor((s) => s.filled);
   const selectedId = useEditor((s) => s.selectedId);
@@ -376,7 +377,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         type: "highlight",
         points: [pos.x, pos.y],
         stroke: highlightColor,
-        strokeWidth: Math.max(10, strokeWidth * 5),
+        strokeWidth: highlightWidth,
       });
     } else if (tool === "rect") {
       setDrawing({
@@ -426,6 +427,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     if (!stage) return;
     const pos = getLogicalPos(stage);
     if (!pos) return;
+    const shift = !!e.evt.shiftKey;
     setDrawing((d) => {
       if (!d) return d;
       switch (d.type) {
@@ -442,8 +444,25 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         case "circle":
           return { ...d, radius: Math.hypot(pos.x - d.x, pos.y - d.y) };
         case "line":
-        case "arrow":
-          return { ...d, points: [d.points[0], d.points[1], pos.x, pos.y] };
+        case "arrow": {
+          let ex = pos.x;
+          let ey = pos.y;
+          if (shift) {
+            const sx = d.points[0];
+            const sy = d.points[1];
+            const dx = ex - sx;
+            const dy = ey - sy;
+            const len = Math.hypot(dx, dy);
+            if (len > 0) {
+              // Snap to the nearest 45° from start
+              const step = Math.PI / 4;
+              const angle = Math.round(Math.atan2(dy, dx) / step) * step;
+              ex = sx + Math.cos(angle) * len;
+              ey = sy + Math.sin(angle) * len;
+            }
+          }
+          return { ...d, points: [d.points[0], d.points[1], ex, ey] };
+        }
       }
       return d;
     });

@@ -41,6 +41,7 @@ type EditorState = {
   textColor: string;
   highlightColor: string;
   strokeWidth: number;
+  highlightWidth: number;
   fontSize: number;
   filled: boolean;
   selectedId: string | null;
@@ -58,6 +59,7 @@ type EditorActions = {
   setTextColor: (c: string) => void;
   setHighlightColor: (c: string) => void;
   setStrokeWidth: (n: number) => void;
+  setHighlightWidth: (n: number) => void;
   setFontSize: (n: number) => void;
   setFilled: (f: boolean) => void;
   addAnnotation: (pageId: string, ann: Annotation) => void;
@@ -87,6 +89,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
   textColor: "#1d4ed8",
   highlightColor: "#fde047",
   strokeWidth: 2,
+  highlightWidth: 16,
   fontSize: 16,
   filled: false,
   selectedId: null,
@@ -105,6 +108,7 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
   setTextColor: (c) => set({ textColor: c }),
   setHighlightColor: (c) => set({ highlightColor: c }),
   setStrokeWidth: (n) => set({ strokeWidth: n }),
+  setHighlightWidth: (n) => set({ highlightWidth: n }),
   setFontSize: (n) => set({ fontSize: n }),
   setFilled: (f) => set({ filled: f }),
 
