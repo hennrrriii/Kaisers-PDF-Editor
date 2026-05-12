@@ -946,28 +946,28 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         type="button"
         onClick={() => insertBlankPageBefore(page.id)}
         title="Insert blank page above"
-        className="page-insert-btn absolute left-1/2 z-30 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-black opacity-0 shadow-sm transition hover:bg-neutral-100"
-        style={{ top: 0 }}
+        className="page-insert-btn absolute left-1/2 z-30 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
+        style={{ top: -44 }}
       >
-        <Plus className="h-4 w-4" strokeWidth={2.5} />
+        <Plus className="h-5 w-5" strokeWidth={2.5} />
       </button>
       <button
         type="button"
         onClick={() => insertBlankPageAfter(page.id)}
         title="Insert blank page below"
-        className="page-insert-btn absolute left-1/2 z-30 flex h-7 w-7 -translate-x-1/2 translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-black opacity-0 shadow-sm transition hover:bg-neutral-100"
-        style={{ bottom: 0 }}
+        className="page-insert-btn absolute left-1/2 z-30 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
+        style={{ bottom: -44 }}
       >
-        <Plus className="h-4 w-4" strokeWidth={2.5} />
+        <Plus className="h-5 w-5" strokeWidth={2.5} />
       </button>
       <button
         type="button"
         onClick={() => insertBlankPageRight(page.id)}
         title="Insert blank page to the right"
-        className="page-insert-btn absolute top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-border bg-white text-black opacity-0 shadow-sm transition hover:bg-neutral-100"
-        style={{ right: 0 }}
+        className="page-insert-btn absolute top-1/2 z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
+        style={{ right: -44 }}
       >
-        <Plus className="h-4 w-4" strokeWidth={2.5} />
+        <Plus className="h-5 w-5" strokeWidth={2.5} />
       </button>
 
       {editing && (

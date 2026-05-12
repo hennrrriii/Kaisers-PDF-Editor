@@ -342,7 +342,7 @@ export function Editor() {
         {/* Pages scroll area */}
         <div
           ref={scrollRef}
-          className="editor-scroll relative flex-1 overflow-auto px-6 py-6"
+          className="editor-scroll relative flex-1 overflow-auto px-16 py-12"
         >
           <div className="mx-auto flex flex-col items-center gap-6">
             {rows.map((row) => (

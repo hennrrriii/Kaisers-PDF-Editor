@@ -89,13 +89,6 @@ body {
   user-select: none;
 }
 
-/* Page-insert buttons: hidden by default, fade in on page hover */
-.page-container:hover > .page-insert-btn,
-.page-insert-btn:hover,
-.page-insert-btn:focus-visible {
-  opacity: 1;
-}
-
 .text-annotation-input {
   background: transparent;
   border: 1px dashed hsl(var(--ring));
