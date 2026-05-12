@@ -76,7 +76,6 @@ type EditorActions = {
   setCurrentPageIndex: (i: number) => void;
   insertBlankPageAfter: (pageId: string, dims?: { w: number; h: number }) => void;
   insertBlankPageBefore: (pageId: string, dims?: { w: number; h: number }) => void;
-  insertBlankPageRight: (pageId: string, dims?: { w: number; h: number }) => void;
   deletePage: (pageId: string) => void;
   markSaved: () => void;
   undo: () => void;
@@ -260,29 +259,6 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
         annotations: [],
       };
       const pages = [...s.pages.slice(0, start), newPage, ...s.pages.slice(start)];
-      return {
-        past: pushPast(s.past, s.pages),
-        future: [],
-        pages,
-        dirty: true,
-      };
-    }),
-
-  insertBlankPageRight: (pageId, dims) =>
-    set((s) => {
-      const idx = s.pages.findIndex((p) => p.id === pageId);
-      if (idx < 0) return s;
-      const start = findRowStart(s.pages, idx);
-      const { end } = getRowBounds(s.pages, idx);
-      const rootId = s.pages[start].id;
-      if (!dims) dims = getBlankDims(s.pages[start]);
-      const newPage: Page = {
-        id: uid(),
-        ref: { kind: "blank", width: dims.w, height: dims.h },
-        annotations: [],
-        sideOf: rootId,
-      };
-      const pages = [...s.pages.slice(0, end + 1), newPage, ...s.pages.slice(end + 1)];
       return {
         past: pushPast(s.past, s.pages),
         future: [],

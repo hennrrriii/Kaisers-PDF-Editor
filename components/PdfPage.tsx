@@ -172,7 +172,6 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const deleteAnnotation = useEditor((s) => s.deleteAnnotation);
   const insertBlankPageBefore = useEditor((s) => s.insertBlankPageBefore);
   const insertBlankPageAfter = useEditor((s) => s.insertBlankPageAfter);
-  const insertBlankPageRight = useEditor((s) => s.insertBlankPageRight);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -942,20 +941,22 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         {index + 1}
       </div>
 
-      <button
-        type="button"
-        onClick={() =>
-          insertBlankPageBefore(page.id, {
-            w: logicalSize.width,
-            h: logicalSize.height,
-          })
-        }
-        title="Insert blank page above"
-        className="page-insert-btn absolute left-1/2 z-30 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
-        style={{ top: -44 }}
-      >
-        <Plus className="h-5 w-5" strokeWidth={2.5} />
-      </button>
+      {index === 0 && (
+        <button
+          type="button"
+          onClick={() =>
+            insertBlankPageBefore(page.id, {
+              w: logicalSize.width,
+              h: logicalSize.height,
+            })
+          }
+          title="Insert blank page above"
+          className="page-insert-btn absolute left-1/2 z-30 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
+          style={{ top: -44 }}
+        >
+          <Plus className="h-5 w-5" strokeWidth={2.5} />
+        </button>
+      )}
       <button
         type="button"
         onClick={() =>
@@ -967,20 +968,6 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         title="Insert blank page below"
         className="page-insert-btn absolute left-1/2 z-30 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
         style={{ bottom: -44 }}
-      >
-        <Plus className="h-5 w-5" strokeWidth={2.5} />
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          insertBlankPageRight(page.id, {
-            w: logicalSize.width,
-            h: logicalSize.height,
-          })
-        }
-        title="Insert blank page to the right"
-        className="page-insert-btn absolute top-1/2 z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
-        style={{ right: -44 }}
       >
         <Plus className="h-5 w-5" strokeWidth={2.5} />
       </button>
