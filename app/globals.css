@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 40 30% 98%;
+  --foreground: 20 14% 12%;
+  --muted: 30 10% 94%;
+  --muted-foreground: 25 6% 40%;
+  --accent: 30 12% 92%;
+  --accent-foreground: 20 14% 12%;
+  --primary: 25 30% 24%;
+  --primary-foreground: 40 30% 98%;
+  --border: 30 10% 86%;
+  --input: 30 10% 86%;
+  --ring: 25 30% 24%;
+  --radius: 0.5rem;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html,
+body,
+#__next {
+  height: 100%;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pdf-page-canvas {
+  display: block;
+}
+
+.editor-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+.editor-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.editor-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 6px;
+}
+
+.text-annotation-input {
+  background: transparent;
+  border: 1px dashed hsl(var(--ring));
+  outline: none;
+  padding: 2px 4px;
+  resize: none;
+  overflow: hidden;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.2;
+}
