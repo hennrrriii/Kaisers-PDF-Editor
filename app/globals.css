@@ -53,6 +53,42 @@ body {
   border-radius: 6px;
 }
 
+/* PDF.js text layer overlay — invisible selectable text */
+.text-layer {
+  overflow: hidden;
+  line-height: 1;
+  -webkit-user-select: text;
+  user-select: text;
+  pointer-events: none;
+}
+.text-layer > span,
+.text-layer > br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0% 0%;
+  cursor: text;
+}
+.text-layer-active > span {
+  pointer-events: auto;
+}
+.text-layer-disabled,
+.text-layer-disabled > span {
+  pointer-events: none !important;
+  user-select: none;
+}
+.text-layer ::selection {
+  background: rgba(255, 211, 0, 0.4);
+}
+.text-layer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0 0;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
+
 .text-annotation-input {
   background: transparent;
   border: 1px dashed hsl(var(--ring));

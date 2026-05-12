@@ -17,7 +17,10 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { HIGHLIGHT_COLORS, STROKE_COLORS, TEXT_COLORS, useEditor } from "@/lib/store";
+import type { StrokeTool } from "@/lib/store";
 import type { Tool } from "@/lib/types";
+
+const STROKE_TOOLS = new Set<Tool>(["draw", "rect", "circle", "line", "arrow"]);
 
 const tools: { id: Tool; icon: React.ComponentType<any>; label: string; key: string }[] = [
   { id: "cursor", icon: MousePointer2, label: "Select", key: "V" },
@@ -38,8 +41,9 @@ export function Toolbar({ onSave }: Props) {
   const setTool = useEditor((s) => s.setTool);
   const zoom = useEditor((s) => s.zoom);
   const setZoom = useEditor((s) => s.setZoom);
-  const strokeColor = useEditor((s) => s.strokeColor);
+  const strokeColors = useEditor((s) => s.strokeColors);
   const setStrokeColor = useEditor((s) => s.setStrokeColor);
+  const strokeColor = STROKE_TOOLS.has(tool) ? strokeColors[tool as StrokeTool] : "#111111";
   const textColor = useEditor((s) => s.textColor);
   const setTextColor = useEditor((s) => s.setTextColor);
   const highlightColor = useEditor((s) => s.highlightColor);
@@ -61,7 +65,7 @@ export function Toolbar({ onSave }: Props) {
   const setColor = (c: string) => {
     if (tool === "text") setTextColor(c);
     else if (tool === "highlight") setHighlightColor(c);
-    else setStrokeColor(c);
+    else if (STROKE_TOOLS.has(tool)) setStrokeColor(tool as StrokeTool, c);
   };
 
   return (

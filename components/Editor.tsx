@@ -127,19 +127,32 @@ export function Editor() {
     [selectedId, selectedPageId],
   );
 
-  // Ctrl + wheel zoom
+  // Ctrl + wheel zoom — accumulated in a ref, flushed once per animation frame.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    let pendingDelta = 0;
+    let rafId = 0;
+    const flush = () => {
+      rafId = 0;
+      if (pendingDelta === 0) return;
+      const current = useEditor.getState().zoom;
+      const next = Math.max(0.4, Math.min(4, current * (1 + pendingDelta)));
+      pendingDelta = 0;
+      useEditor.setState({ zoom: next });
+    };
     const handler = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      const delta = -e.deltaY * 0.0015;
-      setZoom(zoom * (1 + delta));
+      pendingDelta += -e.deltaY * 0.0015;
+      if (!rafId) rafId = requestAnimationFrame(flush);
     };
     el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
-  }, [zoom, setZoom]);
+    return () => {
+      el.removeEventListener("wheel", handler);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   // Clipboard paste of images
   useEffect(() => {

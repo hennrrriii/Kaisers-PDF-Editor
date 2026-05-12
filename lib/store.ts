@@ -29,13 +29,15 @@ export const HIGHLIGHT_COLORS = [
   { name: "Orange", value: "#fdba74" },
 ];
 
+export type StrokeTool = "draw" | "rect" | "circle" | "line" | "arrow";
+
 type EditorState = {
   fileName: string | null;
   pdfBytes: ArrayBuffer | null;
   pages: Page[];
   tool: Tool;
   zoom: number;
-  strokeColor: string;
+  strokeColors: Record<StrokeTool, string>;
   textColor: string;
   highlightColor: string;
   strokeWidth: number;
@@ -52,7 +54,7 @@ type EditorActions = {
   loadPdf: (fileName: string, bytes: ArrayBuffer, pages: Page[]) => void;
   setTool: (t: Tool) => void;
   setZoom: (z: number) => void;
-  setStrokeColor: (c: string) => void;
+  setStrokeColor: (tool: StrokeTool, c: string) => void;
   setTextColor: (c: string) => void;
   setHighlightColor: (c: string) => void;
   setStrokeWidth: (n: number) => void;
@@ -75,7 +77,13 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
   pages: [],
   tool: "cursor",
   zoom: 1.2,
-  strokeColor: "#111111",
+  strokeColors: {
+    draw: "#111111",
+    rect: "#dc2626",
+    circle: "#111111",
+    line: "#111111",
+    arrow: "#111111",
+  },
   textColor: "#1d4ed8",
   highlightColor: "#fde047",
   strokeWidth: 2,
@@ -92,7 +100,8 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
 
   setTool: (t) => set({ tool: t, selectedId: null }),
   setZoom: (z) => set({ zoom: Math.max(0.4, Math.min(4, z)) }),
-  setStrokeColor: (c) => set({ strokeColor: c }),
+  setStrokeColor: (tool, c) =>
+    set((s) => ({ strokeColors: { ...s.strokeColors, [tool]: c } })),
   setTextColor: (c) => set({ textColor: c }),
   setHighlightColor: (c) => set({ highlightColor: c }),
   setStrokeWidth: (n) => set({ strokeWidth: n }),
