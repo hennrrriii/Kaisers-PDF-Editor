@@ -97,15 +97,19 @@ export function Editor() {
     }
   }, [pdfBytes, pages, fileName, markSaved]);
 
-  // Ctrl+S
-  useHotkeys(
-    "ctrl+s, meta+s",
-    (e) => {
-      e.preventDefault();
-      handleSave();
-    },
-    { enableOnFormTags: true },
-  );
+  // Ctrl+S — register at window level in capture phase so the browser's
+  // default "save page as HTML" never wins the race.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSave();
+      }
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true } as any);
+  }, [handleSave]);
 
   // Tool shortcuts (only when not editing text)
   const isTyping = () => {
@@ -277,6 +281,16 @@ export function Editor() {
     return () => el.removeEventListener("scroll", onScroll);
   }, [currentPageIndex, setCurrentPageIndex]);
 
+  const goToPage = useCallback((oneBased: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const total = pages.length;
+    if (total === 0) return;
+    const target = Math.max(1, Math.min(total, Math.floor(oneBased))) - 1;
+    const node = el.querySelector<HTMLElement>(`[data-page-index="${target}"]`);
+    node?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [pages.length]);
+
   const pageList = useMemo(() => pages, [pages]);
   const sizesByPage = useMemo(() => {
     return pageList.map((p) => getLogicalSize(p));
@@ -286,7 +300,7 @@ export function Editor() {
 
   return (
     <div className="flex h-screen flex-col bg-muted/40">
-      <Toolbar onSave={handleSave} />
+      <Toolbar onSave={handleSave} onGoToPage={goToPage} />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Thumbnails */}

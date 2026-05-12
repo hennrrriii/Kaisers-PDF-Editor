@@ -17,6 +17,7 @@ import {
   Redo2,
 } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { HIGHLIGHT_COLORS, STROKE_COLORS, TEXT_COLORS, useEditor } from "@/lib/store";
 import type { StrokeTool } from "@/lib/store";
@@ -36,9 +37,9 @@ const tools: { id: Tool; icon: React.ComponentType<any>; label: string; key: str
   { id: "eraser", icon: Eraser, label: "Eraser", key: "E" },
 ];
 
-type Props = { onSave: () => void };
+type Props = { onSave: () => void; onGoToPage: (page: number) => void };
 
-export function Toolbar({ onSave }: Props) {
+export function Toolbar({ onSave, onGoToPage }: Props) {
   const tool = useEditor((s) => s.tool);
   const setTool = useEditor((s) => s.setTool);
   const zoom = useEditor((s) => s.zoom);
@@ -63,6 +64,22 @@ export function Toolbar({ onSave }: Props) {
   const redo = useEditor((s) => s.redo);
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
+  const totalPages = useEditor((s) => s.pages.length);
+  const currentPageIndex = useEditor((s) => s.currentPageIndex);
+
+  const [pageInput, setPageInput] = useState(String(currentPageIndex + 1));
+  useEffect(() => {
+    setPageInput(String(currentPageIndex + 1));
+  }, [currentPageIndex]);
+
+  const commitPageJump = () => {
+    const n = parseInt(pageInput, 10);
+    if (Number.isFinite(n)) {
+      onGoToPage(n);
+    } else {
+      setPageInput(String(currentPageIndex + 1));
+    }
+  };
 
   const showStroke = ["draw", "rect", "circle", "line", "arrow"].includes(tool);
   const showFillToggle = ["rect", "circle"].includes(tool);
@@ -211,6 +228,29 @@ export function Toolbar({ onSave }: Props) {
 
       <div className="ml-auto flex items-center gap-2">
         <span className="hidden text-xs text-muted-foreground sm:inline">{fileName}</span>
+        <div className="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={pageInput}
+            onChange={(e) => setPageInput(e.target.value.replace(/[^0-9]/g, ""))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitPageJump();
+                (e.target as HTMLInputElement).blur();
+              } else if (e.key === "Escape") {
+                setPageInput(String(currentPageIndex + 1));
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            onBlur={commitPageJump}
+            onFocus={(e) => e.target.select()}
+            className="w-10 bg-transparent text-center tabular-nums outline-none"
+            title="Go to page"
+          />
+          <span className="text-muted-foreground">/ {totalPages}</span>
+        </div>
         <div className="flex items-center gap-1 rounded-md border border-border">
           <Button variant="ghost" size="iconSm" onClick={() => setZoom(zoom - 0.1)} title="Zoom out">
             <ZoomOut className="h-4 w-4" />
