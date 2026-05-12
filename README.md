@@ -119,47 +119,6 @@ lib/
 
 ---
 
-## Deploying to Vercel
-
-Kaiser's deploys cleanly to Vercel with zero configuration.
-
-### A) From the Vercel dashboard (recommended)
-
-1. **Create a GitHub repository.**
-   - Go to <https://github.com/new>, name it (e.g. `kaisers`), choose visibility, click **Create**.
-2. **Push this code.**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/kaisers.git
-   git push -u origin main
-   ```
-3. **Import into Vercel.**
-   - Go to <https://vercel.com/new>.
-   - Sign in with GitHub, authorize the repo if asked.
-   - Click **Import** next to your `kaisers` repo.
-4. **Configure.**
-   - Framework preset: **Next.js** (auto-detected).
-   - Build command: `next build` (default).
-   - Output: handled by Vercel (default).
-   - Install command: `npm install` (default).
-   - Environment variables: **none required**.
-5. **Deploy.**
-   - Click **Deploy**. First build takes ~1 minute.
-   - You get a `https://<project>.vercel.app` URL.
-6. **Automatic deployments.**
-   - Every push to `main` → **Production**.
-   - Every push to another branch or PR → a **Preview** deployment with its own URL.
-
-### B) From the Vercel CLI
-
-```bash
-npm i -g vercel
-vercel        # follow prompts, link or create project
-vercel --prod # deploy to production
-```
 
 ### Build & runtime commands (reference)
 
