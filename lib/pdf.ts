@@ -1,16 +1,17 @@
 "use client";
-// pdf.js loader. We set the workerSrc to the bundled worker via a CDN-free approach using a local worker URL.
 import * as pdfjs from "pdfjs-dist";
+
+// Pinned to the version installed in package.json. Using `pdfjs.version` directly
+// can resolve to undefined under aggressive bundling, which 404s the worker.
+const PDFJS_VERSION = "4.4.168";
 
 let initialized = false;
 export function initPdfJs() {
   if (initialized) return;
-  // Use a worker URL relative to /node_modules served by Next via static import.
-  // pdfjs-dist ships a worker that we copy to /public/pdf.worker.min.mjs OR set workerSrc to CDN.
-  // Use unpkg/jsdelivr as a reliable fallback that works in Vercel.
-  (pdfjs as any).GlobalWorkerOptions.workerSrc =
-    `https://cdn.jsdelivr.net/npm/pdfjs-dist@${(pdfjs as any).version}/build/pdf.worker.min.mjs`;
+  // Local worker shipped from public/. Falls back to jsdelivr if the local one is missing.
+  (pdfjs as any).GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
   initialized = true;
+  void PDFJS_VERSION;
 }
 
 export async function loadPdfDocument(bytes: ArrayBuffer) {
