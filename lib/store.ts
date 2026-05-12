@@ -75,6 +75,8 @@ type EditorActions = {
   toggleSelected: (pageId: string, id: string) => void;
   setCurrentPageIndex: (i: number) => void;
   insertBlankPageAfter: (pageId: string) => void;
+  insertBlankPageBefore: (pageId: string) => void;
+  insertBlankPageRight: (pageId: string) => void;
   deletePage: (pageId: string) => void;
   markSaved: () => void;
   undo: () => void;
@@ -84,6 +86,24 @@ type EditorActions = {
 
 const pushPast = (past: Page[][], pages: Page[]) =>
   [...past, pages].slice(-HISTORY_LIMIT);
+
+function findRowStart(pages: Page[], idx: number): number {
+  let i = idx;
+  while (i > 0 && pages[i].sideOf) i--;
+  return i;
+}
+
+function getRowBounds(pages: Page[], idx: number): { start: number; end: number } {
+  const start = findRowStart(pages, idx);
+  let end = idx;
+  while (end + 1 < pages.length && pages[end + 1].sideOf) end++;
+  return { start, end };
+}
+
+function getBlankDims(prev: Page | undefined): { w: number; h: number } {
+  if (prev && prev.ref.kind === "blank") return { w: prev.ref.width, h: prev.ref.height };
+  return { w: 612, h: 792 };
+}
 
 export const useEditor = create<EditorState & EditorActions>((set, get) => ({
   fileName: null,
@@ -211,19 +231,58 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
     set((s) => {
       const idx = s.pages.findIndex((p) => p.id === pageId);
       if (idx < 0) return s;
-      const prev = s.pages[idx];
-      let w = 612,
-        h = 792;
-      if (prev.ref.kind === "blank") {
-        w = prev.ref.width;
-        h = prev.ref.height;
-      }
+      const { start, end } = getRowBounds(s.pages, idx);
+      const dims = getBlankDims(s.pages[start]);
       const newPage: Page = {
         id: uid(),
-        ref: { kind: "blank", width: w, height: h },
+        ref: { kind: "blank", width: dims.w, height: dims.h },
         annotations: [],
       };
-      const pages = [...s.pages.slice(0, idx + 1), newPage, ...s.pages.slice(idx + 1)];
+      const pages = [...s.pages.slice(0, end + 1), newPage, ...s.pages.slice(end + 1)];
+      return {
+        past: pushPast(s.past, s.pages),
+        future: [],
+        pages,
+        dirty: true,
+      };
+    }),
+
+  insertBlankPageBefore: (pageId) =>
+    set((s) => {
+      const idx = s.pages.findIndex((p) => p.id === pageId);
+      if (idx < 0) return s;
+      const start = findRowStart(s.pages, idx);
+      const root = s.pages[start];
+      const dims = getBlankDims(root);
+      const newPage: Page = {
+        id: uid(),
+        ref: { kind: "blank", width: dims.w, height: dims.h },
+        annotations: [],
+      };
+      const pages = [...s.pages.slice(0, start), newPage, ...s.pages.slice(start)];
+      return {
+        past: pushPast(s.past, s.pages),
+        future: [],
+        pages,
+        dirty: true,
+      };
+    }),
+
+  insertBlankPageRight: (pageId) =>
+    set((s) => {
+      const idx = s.pages.findIndex((p) => p.id === pageId);
+      if (idx < 0) return s;
+      const start = findRowStart(s.pages, idx);
+      const { end } = getRowBounds(s.pages, idx);
+      const rootId = s.pages[start].id;
+      const dims = getBlankDims(s.pages[start]);
+      const newPage: Page = {
+        id: uid(),
+        ref: { kind: "blank", width: dims.w, height: dims.h },
+        annotations: [],
+        sideOf: rootId,
+      };
+      const pages = [...s.pages.slice(0, end + 1), newPage, ...s.pages.slice(end + 1)];
       return {
         past: pushPast(s.past, s.pages),
         future: [],

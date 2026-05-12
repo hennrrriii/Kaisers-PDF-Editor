@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
 import { useEditor } from "@/lib/store";
 import { loadPdfDocument } from "@/lib/pdf";
 import { exportPdf, saveAsPdf } from "@/lib/export";
@@ -20,7 +19,6 @@ export function Editor() {
   const zoom = useEditor((s) => s.zoom);
   const setZoom = useEditor((s) => s.setZoom);
   const setTool = useEditor((s) => s.setTool);
-  const insertBlankPageAfter = useEditor((s) => s.insertBlankPageAfter);
   const deleteAnnotations = useEditor((s) => s.deleteAnnotations);
   const selectedIds = useEditor((s) => s.selectedIds);
   const selectedPageId = useEditor((s) => s.selectedPageId);
@@ -296,6 +294,19 @@ export function Editor() {
     return pageList.map((p) => getLogicalSize(p));
   }, [pageList, getLogicalSize]);
 
+  const rows = useMemo(() => {
+    const out: { index: number; page: (typeof pages)[number] }[][] = [];
+    for (let i = 0; i < pageList.length; i++) {
+      const p = pageList[i];
+      if (!p.sideOf || out.length === 0) {
+        out.push([{ index: i, page: p }]);
+      } else {
+        out[out.length - 1].push({ index: i, page: p });
+      }
+    }
+    return out;
+  }, [pageList]);
+
   if (!pdfBytes) return null;
 
   return (
@@ -333,24 +344,21 @@ export function Editor() {
           ref={scrollRef}
           className="editor-scroll relative flex-1 overflow-auto px-6 py-6"
         >
-          <div className="mx-auto flex flex-col items-center gap-2">
-            {pageList.map((page, i) => (
-              <div key={page.id} className="flex w-full flex-col items-center">
-                <PdfPage
-                  page={page}
-                  index={i}
-                  pdfDoc={pdfDoc}
-                  logicalSize={sizesByPage[i]}
-                />
-                <button
-                  className="group my-2 flex h-6 items-center justify-center text-muted-foreground transition hover:text-primary"
-                  onClick={() => insertBlankPageAfter(page.id)}
-                  title="Insert blank page after"
-                >
-                  <span className="flex items-center gap-1 rounded-full border border-transparent bg-background px-2 py-0.5 text-xs opacity-0 transition group-hover:border-border group-hover:opacity-100">
-                    <Plus className="h-3 w-3" /> Add page
-                  </span>
-                </button>
+          <div className="mx-auto flex flex-col items-center gap-6">
+            {rows.map((row) => (
+              <div
+                key={row[0].page.id}
+                className="flex flex-row items-start justify-center gap-6"
+              >
+                {row.map(({ page, index: i }) => (
+                  <PdfPage
+                    key={page.id}
+                    page={page}
+                    index={i}
+                    pdfDoc={pdfDoc}
+                    logicalSize={sizesByPage[i]}
+                  />
+                ))}
               </div>
             ))}
           </div>

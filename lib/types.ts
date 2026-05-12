@@ -103,6 +103,9 @@ export type Page = {
   id: string;
   ref: PageRef;
   annotations: Annotation[];
+  // When set, this page is rendered to the right of its row's root page
+  // (the previous page in the array whose sideOf is unset).
+  sideOf?: string;
 };
 
 export type ColorOption = { name: string; value: string };

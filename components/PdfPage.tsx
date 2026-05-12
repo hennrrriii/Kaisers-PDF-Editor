@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, memo, useCallback } from "react";
+import { Plus } from "lucide-react";
 import {
   Stage,
   Layer,
@@ -169,6 +170,9 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const addAnnotation = useEditor((s) => s.addAnnotation);
   const updateAnnotation = useEditor((s) => s.updateAnnotation);
   const deleteAnnotation = useEditor((s) => s.deleteAnnotation);
+  const insertBlankPageBefore = useEditor((s) => s.insertBlankPageBefore);
+  const insertBlankPageAfter = useEditor((s) => s.insertBlankPageAfter);
+  const insertBlankPageRight = useEditor((s) => s.insertBlankPageRight);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -859,7 +863,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     <div
       ref={containerRef}
       data-page-index={index}
-      className="relative mx-auto bg-white shadow-md"
+      className="page-container relative mx-auto bg-white shadow-md"
       onMouseUp={onContainerMouseUp}
       style={{ width: stageWidth, height: stageHeight }}
     >
@@ -937,6 +941,34 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
       <div className="pointer-events-none absolute -left-12 top-2 select-none text-xs text-muted-foreground">
         {index + 1}
       </div>
+
+      <button
+        type="button"
+        onClick={() => insertBlankPageBefore(page.id)}
+        title="Insert blank page above"
+        className="page-insert-btn absolute left-1/2 z-30 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-black opacity-0 shadow-sm transition hover:bg-neutral-100"
+        style={{ top: 0 }}
+      >
+        <Plus className="h-4 w-4" strokeWidth={2.5} />
+      </button>
+      <button
+        type="button"
+        onClick={() => insertBlankPageAfter(page.id)}
+        title="Insert blank page below"
+        className="page-insert-btn absolute left-1/2 z-30 flex h-7 w-7 -translate-x-1/2 translate-y-1/2 items-center justify-center rounded-full border border-border bg-white text-black opacity-0 shadow-sm transition hover:bg-neutral-100"
+        style={{ bottom: 0 }}
+      >
+        <Plus className="h-4 w-4" strokeWidth={2.5} />
+      </button>
+      <button
+        type="button"
+        onClick={() => insertBlankPageRight(page.id)}
+        title="Insert blank page to the right"
+        className="page-insert-btn absolute top-1/2 z-30 flex h-7 w-7 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-border bg-white text-black opacity-0 shadow-sm transition hover:bg-neutral-100"
+        style={{ right: 0 }}
+      >
+        <Plus className="h-4 w-4" strokeWidth={2.5} />
+      </button>
 
       {editing && (
         <textarea
