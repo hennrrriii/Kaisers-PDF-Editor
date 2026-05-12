@@ -944,7 +944,12 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
 
       <button
         type="button"
-        onClick={() => insertBlankPageBefore(page.id)}
+        onClick={() =>
+          insertBlankPageBefore(page.id, {
+            w: logicalSize.width,
+            h: logicalSize.height,
+          })
+        }
         title="Insert blank page above"
         className="page-insert-btn absolute left-1/2 z-30 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
         style={{ top: -44 }}
@@ -953,7 +958,12 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
       </button>
       <button
         type="button"
-        onClick={() => insertBlankPageAfter(page.id)}
+        onClick={() =>
+          insertBlankPageAfter(page.id, {
+            w: logicalSize.width,
+            h: logicalSize.height,
+          })
+        }
         title="Insert blank page below"
         className="page-insert-btn absolute left-1/2 z-30 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
         style={{ bottom: -44 }}
@@ -962,7 +972,12 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
       </button>
       <button
         type="button"
-        onClick={() => insertBlankPageRight(page.id)}
+        onClick={() =>
+          insertBlankPageRight(page.id, {
+            w: logicalSize.width,
+            h: logicalSize.height,
+          })
+        }
         title="Insert blank page to the right"
         className="page-insert-btn absolute top-1/2 z-30 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border-2 border-black bg-white text-black shadow-md transition hover:bg-neutral-100"
         style={{ right: -44 }}

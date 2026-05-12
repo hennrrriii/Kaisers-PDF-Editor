@@ -74,9 +74,9 @@ type EditorActions = {
   setSelectedIds: (pageId: string | null, ids: string[]) => void;
   toggleSelected: (pageId: string, id: string) => void;
   setCurrentPageIndex: (i: number) => void;
-  insertBlankPageAfter: (pageId: string) => void;
-  insertBlankPageBefore: (pageId: string) => void;
-  insertBlankPageRight: (pageId: string) => void;
+  insertBlankPageAfter: (pageId: string, dims?: { w: number; h: number }) => void;
+  insertBlankPageBefore: (pageId: string, dims?: { w: number; h: number }) => void;
+  insertBlankPageRight: (pageId: string, dims?: { w: number; h: number }) => void;
   deletePage: (pageId: string) => void;
   markSaved: () => void;
   undo: () => void;
@@ -227,12 +227,12 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
     }),
   setCurrentPageIndex: (i) => set({ currentPageIndex: i }),
 
-  insertBlankPageAfter: (pageId) =>
+  insertBlankPageAfter: (pageId, dims) =>
     set((s) => {
       const idx = s.pages.findIndex((p) => p.id === pageId);
       if (idx < 0) return s;
       const { start, end } = getRowBounds(s.pages, idx);
-      const dims = getBlankDims(s.pages[start]);
+      if (!dims) dims = getBlankDims(s.pages[start]);
       const newPage: Page = {
         id: uid(),
         ref: { kind: "blank", width: dims.w, height: dims.h },
@@ -247,13 +247,13 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
       };
     }),
 
-  insertBlankPageBefore: (pageId) =>
+  insertBlankPageBefore: (pageId, dims) =>
     set((s) => {
       const idx = s.pages.findIndex((p) => p.id === pageId);
       if (idx < 0) return s;
       const start = findRowStart(s.pages, idx);
       const root = s.pages[start];
-      const dims = getBlankDims(root);
+      if (!dims) dims = getBlankDims(root);
       const newPage: Page = {
         id: uid(),
         ref: { kind: "blank", width: dims.w, height: dims.h },
@@ -268,14 +268,14 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
       };
     }),
 
-  insertBlankPageRight: (pageId) =>
+  insertBlankPageRight: (pageId, dims) =>
     set((s) => {
       const idx = s.pages.findIndex((p) => p.id === pageId);
       if (idx < 0) return s;
       const start = findRowStart(s.pages, idx);
       const { end } = getRowBounds(s.pages, idx);
       const rootId = s.pages[start].id;
-      const dims = getBlankDims(s.pages[start]);
+      if (!dims) dims = getBlankDims(s.pages[start]);
       const newPage: Page = {
         id: uid(),
         ref: { kind: "blank", width: dims.w, height: dims.h },
