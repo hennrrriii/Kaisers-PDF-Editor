@@ -197,6 +197,24 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const [erasing, setErasing] = useState(false);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [textBorderHover, setTextBorderHover] = useState(false);
+  const [hoveredTextId, setHoveredTextId] = useState<string | null>(null);
+  const hoverClearRef = useRef<number | null>(null);
+
+  const onTextEnter = useCallback((id: string) => {
+    if (hoverClearRef.current !== null) {
+      cancelAnimationFrame(hoverClearRef.current);
+      hoverClearRef.current = null;
+    }
+    setHoveredTextId(id);
+  }, []);
+
+  const onTextLeave = useCallback(() => {
+    if (hoverClearRef.current !== null) cancelAnimationFrame(hoverClearRef.current);
+    hoverClearRef.current = requestAnimationFrame(() => {
+      setHoveredTextId(null);
+      hoverClearRef.current = null;
+    });
+  }, []);
   const [marquee, setMarquee] = useState<{
     x1: number;
     y1: number;
@@ -669,16 +687,25 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
     setDrawing(null);
   };
 
-  // Auto-focus textarea on open
+  // Auto-focus textarea on open AND size it to the current content so an
+  // existing annotation re-opens at its rendered size, not the empty-field
+  // default.
   useEffect(() => {
     if (editing && textareaRef.current) {
       const ta = textareaRef.current;
       requestAnimationFrame(() => {
         ta.focus();
         ta.select();
+        // Size to content
+        const lines = editing.text.split("\n");
+        const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
+        const charW = editing.fontSize * zoom * 0.6;
+        ta.style.width = `${Math.max(120, longest * charW + 16)}px`;
+        ta.style.height = "auto";
+        ta.style.height = `${ta.scrollHeight}px`;
       });
     }
-  }, [editing?.editingId, editing === null ? "none" : `${editing.x}-${editing.y}`]);
+  }, [editing?.editingId, editing === null ? "none" : `${editing.x}-${editing.y}`, zoom]);
 
   // ---------- transform-end handlers (V tool resize) ----------
   const bakeTransformAndUpdate = useCallback(
@@ -875,6 +902,12 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             shadowEnabled={isSelected}
             shadowColor="#1d4ed8"
             shadowBlur={4}
+            onMouseEnter={() => {
+              if (tool === "text") onTextEnter(ann.id);
+            }}
+            onMouseLeave={() => {
+              if (tool === "text") onTextLeave();
+            }}
           />
         );
       case "image":
@@ -946,40 +979,50 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         <Layer ref={layerRef} scaleX={zoom} scaleY={zoom} listening>
           {page.annotations.map(renderAnnotation)}
           {tool === "text" &&
-            page.annotations
-              .filter((a): a is Extract<Annotation, { type: "text" }> => a.type === "text")
-              .map((a) => {
-                const bb = getAnnotationBBox(a);
-                const pad = 4;
-                return (
-                  <Rect
-                    key={`textdrag-${a.id}`}
-                    x={bb.x - pad}
-                    y={bb.y - pad}
-                    width={bb.w + pad * 2}
-                    height={bb.h + pad * 2}
-                    stroke="#1d4ed8"
-                    strokeWidth={1}
-                    dash={[4, 4]}
-                    fillEnabled={false}
-                    listening
-                    hitStrokeWidth={12}
-                    draggable
-                    onMouseEnter={() => setTextBorderHover(true)}
-                    onMouseLeave={() => setTextBorderHover(false)}
-                    onDragStart={() => setTextBorderHover(false)}
-                    onDragEnd={(e) => {
-                      const dx = e.target.x() - (bb.x - pad);
-                      const dy = e.target.y() - (bb.y - pad);
-                      updateAnnotation(page.id, a.id, {
-                        x: a.x + dx,
-                        y: a.y + dy,
-                      } as any);
-                      e.target.position({ x: bb.x - pad, y: bb.y - pad });
-                    }}
-                  />
-                );
-              })}
+            hoveredTextId &&
+            (() => {
+              const a = page.annotations.find(
+                (x) => x.id === hoveredTextId && x.type === "text",
+              ) as Extract<Annotation, { type: "text" }> | undefined;
+              if (!a) return null;
+              const bb = getAnnotationBBox(a);
+              const pad = 4;
+              return (
+                <Rect
+                  key={`textdrag-${a.id}`}
+                  x={bb.x - pad}
+                  y={bb.y - pad}
+                  width={bb.w + pad * 2}
+                  height={bb.h + pad * 2}
+                  stroke="#1d4ed8"
+                  strokeWidth={1}
+                  dash={[4, 4]}
+                  fillEnabled={false}
+                  listening
+                  hitStrokeWidth={12}
+                  draggable
+                  onMouseEnter={() => {
+                    onTextEnter(a.id);
+                    setTextBorderHover(true);
+                  }}
+                  onMouseLeave={() => {
+                    onTextLeave();
+                    setTextBorderHover(false);
+                  }}
+                  onDragStart={() => setTextBorderHover(false)}
+                  onDragEnd={(e) => {
+                    const dx = e.target.x() - (bb.x - pad);
+                    const dy = e.target.y() - (bb.y - pad);
+                    updateAnnotation(page.id, a.id, {
+                      x: a.x + dx,
+                      y: a.y + dy,
+                    } as any);
+                    e.target.position({ x: bb.x - pad, y: bb.y - pad });
+                    onTextLeave();
+                  }}
+                />
+              );
+            })()}
           {drawing && renderAnnotation(drawing)}
           {marquee && (
             <Rect
