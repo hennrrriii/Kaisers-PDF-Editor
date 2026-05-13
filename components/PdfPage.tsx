@@ -962,9 +962,6 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
                     listening
                     hitStrokeWidth={12}
                     draggable
-                    onMouseDown={(e) => {
-                      e.cancelBubble = true;
-                    }}
                     onDragEnd={(e) => {
                       const dx = e.target.x() - (bb.x - pad);
                       const dy = e.target.y() - (bb.y - pad);
@@ -1107,9 +1104,11 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
               dy < edge ||
               dy > rect.height - edge;
             if (!nearEdge) return;
-            // Drag the textarea via its dashed border.
+            // Drag the textarea via its dashed border. preventDefault keeps
+            // focus where it is — calling blur() would fire onBlur and
+            // commit/close the edit before the drag begins.
             e.preventDefault();
-            ta.blur();
+            e.stopPropagation();
             const startX = e.clientX;
             const startY = e.clientY;
             const origX = editing.x;
@@ -1128,7 +1127,6 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             const onUp = () => {
               window.removeEventListener("mousemove", onMove);
               window.removeEventListener("mouseup", onUp);
-              requestAnimationFrame(() => textareaRef.current?.focus());
             };
             window.addEventListener("mousemove", onMove);
             window.addEventListener("mouseup", onUp);
