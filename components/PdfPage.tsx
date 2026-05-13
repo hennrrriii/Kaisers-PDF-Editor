@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, memo, useCallback } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import {
   Stage,
   Layer,
@@ -172,6 +172,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const deleteAnnotation = useEditor((s) => s.deleteAnnotation);
   const insertBlankPageBefore = useEditor((s) => s.insertBlankPageBefore);
   const insertBlankPageAfter = useEditor((s) => s.insertBlankPageAfter);
+  const deletePage = useEditor((s) => s.deletePage);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -193,6 +194,8 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   }, [zoom]);
 
   const [drawing, setDrawing] = useState<Annotation | null>(null);
+  const [erasing, setErasing] = useState(false);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [marquee, setMarquee] = useState<{
     x1: number;
     y1: number;
@@ -429,6 +432,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
       return;
     }
     if (tool === "eraser") {
+      setErasing(true);
       if (!isStage) {
         const id = (e.target as any).attrs.annId || (e.target as any).attrs.name;
         if (id) deleteAnnotation(page.id, id);
@@ -517,25 +521,59 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (marquee) {
-      const stage = e.target.getStage();
-      if (!stage) return;
-      const pos = getLogicalPos(stage);
-      if (!pos) return;
-      setMarquee((m) => (m ? { ...m, x2: pos.x, y2: pos.y } : m));
-      return;
-    }
-    if (!drawing) return;
     const stage = e.target.getStage();
     if (!stage) return;
     const pos = getLogicalPos(stage);
     if (!pos) return;
+
+    // Track cursor for the highlight "marker tip" preview rectangle.
+    if (tool === "highlight") setHoverPos(pos);
+
+    // Eraser: while held, delete anything we drag over.
+    if (erasing) {
+      const rawPos = stage.getPointerPosition();
+      if (!rawPos) return;
+      const node = stage.getIntersection(rawPos);
+      if (node) {
+        const id = (node as any).attrs.annId || (node as any).attrs.name;
+        if (id) deleteAnnotation(page.id, id);
+      }
+      return;
+    }
+
+    if (marquee) {
+      setMarquee((m) => (m ? { ...m, x2: pos.x, y2: pos.y } : m));
+      return;
+    }
+    if (!drawing) return;
     const shift = !!e.evt.shiftKey;
     setDrawing((d) => {
       if (!d) return d;
       switch (d.type) {
-        case "draw":
+        case "draw": {
+          const pts = d.points.slice();
+          const lx = pts[pts.length - 2];
+          const ly = pts[pts.length - 1];
+          if (Math.hypot(pos.x - lx, pos.y - ly) > 1.5) pts.push(pos.x, pos.y);
+          return { ...d, points: pts };
+        }
         case "highlight": {
+          if (shift) {
+            const sx = d.points[0];
+            const sy = d.points[1];
+            let ex = pos.x;
+            let ey = pos.y;
+            const dx = ex - sx;
+            const dy = ey - sy;
+            const len = Math.hypot(dx, dy);
+            if (len > 0) {
+              const step = Math.PI / 4;
+              const angle = Math.round(Math.atan2(dy, dx) / step) * step;
+              ex = sx + Math.cos(angle) * len;
+              ey = sy + Math.sin(angle) * len;
+            }
+            return { ...d, points: [sx, sy, ex, ey] };
+          }
           const pts = d.points.slice();
           const lx = pts[pts.length - 2];
           const ly = pts[pts.length - 1];
@@ -572,6 +610,10 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   };
 
   const handleMouseUp = () => {
+    if (erasing) {
+      setErasing(false);
+      return;
+    }
     if (marquee) {
       const m = marquee;
       const rect = {
@@ -882,7 +924,10 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={() => {
+          handleMouseUp();
+          setHoverPos(null);
+        }}
         className="absolute inset-0"
         style={{
           cursor:
@@ -890,13 +935,48 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
               ? "default"
               : tool === "text"
                 ? "text"
-                : tool === "eraser"
-                  ? "crosshair"
+                : tool === "highlight"
+                  ? "none"
                   : "crosshair",
         }}
       >
         <Layer ref={layerRef} scaleX={zoom} scaleY={zoom} listening>
           {page.annotations.map(renderAnnotation)}
+          {tool === "text" &&
+            page.annotations
+              .filter((a): a is Extract<Annotation, { type: "text" }> => a.type === "text")
+              .map((a) => {
+                const bb = getAnnotationBBox(a);
+                const pad = 4;
+                return (
+                  <Rect
+                    key={`textdrag-${a.id}`}
+                    x={bb.x - pad}
+                    y={bb.y - pad}
+                    width={bb.w + pad * 2}
+                    height={bb.h + pad * 2}
+                    stroke="#1d4ed8"
+                    strokeWidth={1}
+                    dash={[4, 4]}
+                    fillEnabled={false}
+                    listening
+                    hitStrokeWidth={12}
+                    draggable
+                    onMouseDown={(e) => {
+                      e.cancelBubble = true;
+                    }}
+                    onDragEnd={(e) => {
+                      const dx = e.target.x() - (bb.x - pad);
+                      const dy = e.target.y() - (bb.y - pad);
+                      updateAnnotation(page.id, a.id, {
+                        x: a.x + dx,
+                        y: a.y + dy,
+                      } as any);
+                      e.target.position({ x: bb.x - pad, y: bb.y - pad });
+                    }}
+                  />
+                );
+              })}
           {drawing && renderAnnotation(drawing)}
           {marquee && (
             <Rect
@@ -941,6 +1021,23 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
         {index + 1}
       </div>
 
+      {tool === "highlight" && hoverPos && !drawing && (
+        <div
+          className="pointer-events-none absolute z-20"
+          style={{
+            left: hoverPos.x * zoom,
+            top: hoverPos.y * zoom,
+            width: highlightWidth * zoom * 3,
+            height: highlightWidth * zoom,
+            transform: "translate(-50%, -50%)",
+            background: highlightColor,
+            opacity: 0.4,
+            borderRadius: 1,
+            boxShadow: "0 0 0 1px rgba(0,0,0,0.25)",
+          }}
+        />
+      )}
+
       {index === 0 && (
         <button
           type="button"
@@ -971,12 +1068,71 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
       >
         <Plus className="h-5 w-5" strokeWidth={2.5} />
       </button>
+      {page.ref.kind === "blank" && (
+        <button
+          type="button"
+          onClick={() => deletePage(page.id)}
+          title="Delete this blank page"
+          className="page-insert-btn absolute z-30 flex h-8 w-8 items-center justify-center rounded-full border-2 border-red-600 bg-white text-red-600 shadow-md transition hover:bg-red-50"
+          style={{ top: -16, right: -16 }}
+        >
+          <Trash2 className="h-4 w-4" strokeWidth={2.2} />
+        </button>
+      )}
 
       {editing && (
         <textarea
           ref={textareaRef}
           value={editing.text}
-          onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+          onChange={(e) => {
+            const next = e.target.value;
+            setEditing({ ...editing, text: next });
+            const ta = e.target;
+            ta.style.height = "auto";
+            ta.style.height = `${ta.scrollHeight}px`;
+            const lines = next.split("\n");
+            const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
+            const charW = editing.fontSize * zoom * 0.6;
+            ta.style.width = `${Math.max(120, longest * charW + 16)}px`;
+          }}
+          onMouseDown={(e) => {
+            const ta = e.currentTarget;
+            const rect = ta.getBoundingClientRect();
+            const dx = e.clientX - rect.left;
+            const dy = e.clientY - rect.top;
+            const edge = 5;
+            const nearEdge =
+              dx < edge ||
+              dx > rect.width - edge ||
+              dy < edge ||
+              dy > rect.height - edge;
+            if (!nearEdge) return;
+            // Drag the textarea via its dashed border.
+            e.preventDefault();
+            ta.blur();
+            const startX = e.clientX;
+            const startY = e.clientY;
+            const origX = editing.x;
+            const origY = editing.y;
+            const onMove = (ev: MouseEvent) => {
+              setEditing((cur) =>
+                cur
+                  ? {
+                      ...cur,
+                      x: origX + (ev.clientX - startX) / zoom,
+                      y: origY + (ev.clientY - startY) / zoom,
+                    }
+                  : cur,
+              );
+            };
+            const onUp = () => {
+              window.removeEventListener("mousemove", onMove);
+              window.removeEventListener("mouseup", onUp);
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
+          }}
           onBlur={() => commitEdit()}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
@@ -992,6 +1148,8 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             fontSize: `${editing.fontSize * zoom}px`,
             minWidth: 120,
             minHeight: editing.fontSize * zoom + 8,
+            whiteSpace: "pre",
+            overflow: "hidden",
           }}
         />
       )}
