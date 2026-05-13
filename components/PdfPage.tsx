@@ -196,6 +196,7 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
   const [drawing, setDrawing] = useState<Annotation | null>(null);
   const [erasing, setErasing] = useState(false);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  const [textBorderHover, setTextBorderHover] = useState(false);
   const [marquee, setMarquee] = useState<{
     x1: number;
     y1: number;
@@ -934,7 +935,9 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             tool === "cursor"
               ? "default"
               : tool === "text"
-                ? "text"
+                ? textBorderHover
+                  ? "pointer"
+                  : "text"
                 : tool === "highlight"
                   ? "none"
                   : "crosshair",
@@ -962,6 +965,9 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
                     listening
                     hitStrokeWidth={12}
                     draggable
+                    onMouseEnter={() => setTextBorderHover(true)}
+                    onMouseLeave={() => setTextBorderHover(false)}
+                    onDragStart={() => setTextBorderHover(false)}
                     onDragEnd={(e) => {
                       const dx = e.target.x() - (bb.x - pad);
                       const dy = e.target.y() - (bb.y - pad);
@@ -1091,6 +1097,19 @@ export const PdfPage = memo(function PdfPage({ page, index, pdfDoc, logicalSize 
             const longest = lines.reduce((m, l) => Math.max(m, l.length), 0);
             const charW = editing.fontSize * zoom * 0.6;
             ta.style.width = `${Math.max(120, longest * charW + 16)}px`;
+          }}
+          onMouseMove={(e) => {
+            const ta = e.currentTarget;
+            const rect = ta.getBoundingClientRect();
+            const dx = e.clientX - rect.left;
+            const dy = e.clientY - rect.top;
+            const edge = 5;
+            const nearEdge =
+              dx < edge ||
+              dx > rect.width - edge ||
+              dy < edge ||
+              dy > rect.height - edge;
+            ta.style.cursor = nearEdge ? "pointer" : "text";
           }}
           onMouseDown={(e) => {
             const ta = e.currentTarget;
